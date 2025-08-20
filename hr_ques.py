@@ -2,11 +2,21 @@ import streamlit as st
 import os
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAI
-from crewai import Crew, Process, Agent, Task
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langgraph.graph import StateGraph
+from typing import Dict, Any, TypedDict, Optional
+from config import GOOGLE_API_KEY
+
+
+# Define the state as a TypedDict
+class HRState(TypedDict, total=False):
+    resume_data: str
+    hr_questions: str
 
 def app():
-    # Replace 'YOUR_API_KEY' with your actual API key
-    genai.configure(api_key='AIzaSyBqlzrpUhy9ojFvG7YseCNB6Tq2f9mg8pY')
+    # Configure Genai with API key from environment
+    genai.configure(api_key=GOOGLE_API_KEY)
 
     # Create a generative model instance
     model = genai.GenerativeModel("gemini-1.5-flash")
@@ -69,37 +79,70 @@ def app():
     
     # If pdf_data is not None, generate HR questions
     if pdf_data:
-        goole_llm = GoogleGenerativeAI(
+        google_llm = GoogleGenerativeAI(
             model="gemini-1.5-flash",
             verbose=True,
             temperature=0.5,
-            google_api_key='AIzaSyBqlzrpUhy9ojFvG7YseCNB6Tq2f9mg8pY'
+            google_api_key=GOOGLE_API_KEY
         )
 
-        hr_agent = Agent(
-            role='Hiring Agent',
-            goal='Conduct a structured interview based on extracted skills from a resume',
-            backstory='The Hiring Agent has over 10 years of experience in talent acquisition across various industries...',
-            llm=goole_llm,
-            memory=True,
-            verbose=True,
+        # Define prompt template for HR questions
+        hr_prompt = PromptTemplate(
+            input_variables=["resume_data"],
+            template="""You are an experienced Hiring Agent with over 10 years of experience in talent acquisition across various industries.
+            
+            Your goal is to conduct a structured interview based on extracted skills from a resume.
+            
+            Generate a list of HR interview questions for the following resume data:
+            {resume_data}
+            
+            Focus on evaluating:
+            1. Technical skills
+            2. Relevant experience
+            3. Cultural fit
+            4. Problem-solving abilities
+            5. Communication skills
+            
+            Format the output as a structured list of questions organized by category.
+            """
         )
-
-        hr_questions_task = Task(
-            description=f"Generate a list of HR interview questions for the role: {pdf_data}. Focus on evaluating skills, experience, and cultural fit.",
-            expected_output=f"A set of interview questions tailored to the role of {pdf_data}.",
-            agent=hr_agent,
-            asyn_execution=False
-        )
-
-        crew = Crew(
-            agents=[hr_agent],
-            tasks=[hr_questions_task],
-            verbose=True,
-            process=Process.sequential
-        )
-
-        result = crew.kickoff()
-        st.write(result.raw)
+        
+        # Create LLMChain for HR question generation
+        hr_chain = LLMChain(llm=google_llm, prompt=hr_prompt, output_key="hr_questions")
+        
+        # Define initial state - use a dictionary instead of a function
+        initial_state: HRState = {"resume_data": pdf_data}
+        
+        # Define the LangGraph workflow with a TypedDict schema
+        workflow = StateGraph(HRState)
+        
+        # Define the node for our graph
+        def generate_hr_questions(state: HRState) -> HRState:
+            if not state.get("resume_data"):
+                return {"resume_data": "", "hr_questions": ""}
+            result = hr_chain.invoke({"resume_data": state["resume_data"]})
+            return {"resume_data": state["resume_data"], "hr_questions": result["hr_questions"]}
+        
+        # Add node to graph
+        workflow.add_node("hr_questions", generate_hr_questions)
+        
+        # Set the entry point
+        workflow.set_entry_point("hr_questions")
+        
+        # Compile the graph
+        hr_graph = workflow.compile()
+        
+        # Execute the graph
+        try:
+            result = hr_graph.invoke(initial_state)
+            
+            if "hr_questions" in result:
+                st.header("HR Interview Questions")
+                st.write(result["hr_questions"])
+            else:
+                st.warning("No questions could be generated. The resume might not contain enough information.")
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+            st.info("Try uploading a different file or refresh the page.")
     else:
         st.write("Please upload a valid file to begin the learning process.")
