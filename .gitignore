@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+# Environment
+.env
+.venv/
+venv/
+ENV/
+
+# PDF and data files
+*.pdf
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Windows
+*.exe
+*.bat
+*.ps1
+
+# Misc
+*.swp
+*.swo
+
+# Ignore virtual environment folder
+/iq/
